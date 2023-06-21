@@ -10,7 +10,11 @@ from socket import (
     timeout,
 )
 
-from .messages import LOGIN_MESSAGE
+import zmq
+
+import messages
+
+from .sockets import CloudPickleContext, CloudPickleSocket, no_block_REQ
 
 BROADCAST_PORT = 4142
 
@@ -31,7 +35,7 @@ def discover_peer(times, log):
 
     broadcastAddress = ("255.255.255.255", BROADCAST_PORT)
     magic = conf["magic"]
-    message = magic + LOGIN_MESSAGE
+    message = magic + messages.LOGIN_MESSAGE
     peer = ""
     network = True
 
@@ -69,3 +73,34 @@ def discover_peer(times, log):
     sock.close()
 
     return peer, network
+
+
+def get_masters(master, discover_peer, address, login, q, log, signkey=None):
+    """
+    Request the list of master nodes to a active master, if <master> is not active, then try to discover a master active in the network.
+    """
+    context = CloudPickleContext()
+    sock: CloudPickleSocket = no_block_REQ(context, timeout=1200)
+    sock.connect(f"tcp://{master}")
+
+    for i in range(4, 0, -1):
+        try:
+            sock.send_data(messages.GET_MASTERS, signkey=signkey)
+            masters = sock.recv_data(signkey=signkey)
+            log.info(f"Received masters: {masters}", "Get Masters")
+            if login:
+                sock.send_data((messages.NEW_MASTER, address))
+                sock.recv_data()
+            sock.close()
+            q.put(master)
+            break
+        except zmq.error.Again as e:
+            log.debug(e, "Get Master")
+            master, _ = discover_peer(i, log)
+            if master != "":
+                sock.connect(f"tcp://{master}")
+        except Exception as e:
+            log.error(e, "Get Master")
+        finally:
+            if i == 1:
+                q.put({})
