@@ -15,8 +15,7 @@ from socket import (
 import zmq
 
 import messages
-
-from .sockets import CloudPickleContext, CloudPickleSocket, no_block_REQ
+from sockets import CloudPickleContext, CloudPickleSocket, no_block_REQ
 
 BROADCAST_PORT = 4142
 
@@ -44,10 +43,10 @@ def discover_peer(times, log):
 
     for i in range(times):
         try:
-            log.info("Discovering peers", "discoverPeer")
+            log.info("Discovering peers", "discover_peer")
             sock.sendto(message.encode(), broadcastAddress)
 
-            log.debug("Waiting to receive", "discoverPeer")
+            log.debug("Waiting to receive", "discover_peer")
             data, server = sock.recvfrom(4096)
             header, address = pickle.loads(data)
             if header.startswith(conf["magic"]):
@@ -92,8 +91,8 @@ def get_masters(master, discover_peer, address, login, q, log, signkey=None):
             masters = sock.recv_data(signkey=signkey)
             log.info(f"Received masters: {masters}", "Get Masters")
             if login:
-                sock.send_data((messages.NEW_MASTER, address))
-                sock.recv_data()
+                sock.send_data((messages.NEW_MASTER, address), signkey=signkey)
+                sock.recv_data(signkey=signkey)
             sock.close()
             q.put(master)
             break
@@ -109,7 +108,7 @@ def get_masters(master, discover_peer, address, login, q, log, signkey=None):
                 q.put({})
 
 
-def ping(master, q, time, log):
+def ping(master, q, time, log, signkey=None):
     """
     Process that make ping to a master.
     """
@@ -120,9 +119,9 @@ def ping(master, q, time, log):
 
     log.debug(f"PING to {master[0]}:{master[1]}", "Ping")
     try:
-        socket.send_data((messages.PING,))
+        socket.send_data((messages.PING,), signkey=signkey)
 
-        msg = socket.recv_data()
+        msg = socket.recv_data(signkey=signkey)
         log.info(f"Received {msg} from {master[0]}:{master[1]} after ping", "Ping")
     except zmq.error.Again as e:
         log.debug(f"PING failed -- {e}", "Ping")
@@ -138,6 +137,7 @@ def find_masters(
     timeout=1000,
     sleep_time=15,
     master_from_input=None,
+    signkey=None,
 ):
     """
     Process that ask to a seed for his list of seeds.
@@ -151,7 +151,12 @@ def find_masters(
             # This process is useful to know if a seed is dead too
             ping_queue = Queue()
             process_ping = Process(
-                target=ping, name="Ping", args=(s, ping_queue, timeout, log)
+                target=ping,
+                name="Ping",
+                args=(s, ping_queue, timeout, log),
+                kwargs={
+                    "signkey": signkey,
+                },
             )
             process_ping.start()
             status = ping_queue.get()
@@ -174,6 +179,9 @@ def find_masters(
                 masters_queue,
                 log,
             ),
+            kwargs={
+                "signkey": signkey,
+            },
         )
         log.debug("Finding new masters to pull from...", "Find Masters")
         process_get_masters.start()

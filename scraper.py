@@ -1,4 +1,3 @@
-import logging
 import os
 import re
 import time
@@ -10,11 +9,14 @@ import requests
 import zmq
 
 import messages
+from logger import LOGLVLMAP, get_logger
 from service_discovery import discover_peer, find_masters, get_masters
+from settings import get_config
+from sockets import CloudPickleContext, CloudPickleSocket, no_block_REQ
 
-from .sockets import CloudPickleContext, CloudPickleSocket, no_block_REQ
+log = get_logger("Scraper")
+conf = get_config()
 
-log = logging.getLogger("Scraper")
 
 available_slaves = Value(c_int)
 
@@ -62,7 +64,7 @@ def disconnect_from_masters(sock, inc, lock, counter, peer_queue, user):
             )
 
 
-def notifier(notifications, peer_queue, dead_queue):
+def notifier(notifications, peer_queue, dead_queue, signkey=None):
     """
     Process to send notifications of task's status to masters.
     """
@@ -114,9 +116,9 @@ def notifier(notifications, peer_queue, dead_queue):
                             "Worker Notifier",
                         )
                         # msg: (flag, url, data)
-                        socket.send_data(msg)
+                        socket.send_data(msg, signkey=signkey)
                         # nothing important to receive
-                        socket.recv_data()
+                        socket.recv_data(signkey=signkey)
                         counter_SocketNotifier.release()
                         break
             except zmq.error.Again as e:
@@ -129,7 +131,7 @@ def notifier(notifications, peer_queue, dead_queue):
                 time.sleep(0.5)
 
 
-def listener(addr, port, queue, data):
+def listener(addr, port, queue, data, signkey=None):
     """
     Process to attend the verification messages sent by the master.
     """
@@ -147,13 +149,14 @@ def listener(addr, port, queue, data):
 
     thread = Thread(target=puller)
     thread.start()
-    socket = CloudPickleSocket().socket(zmq.REP)
+    context = CloudPickleContext()
+    socket = context.socket(zmq.REP)
     socket.bind(f"tcp://{addr}:{port}")
 
     while True:
-        res = socket.recv_data()
+        res = socket.recv_data(signkey=signkey)
         with lock_work:
-            socket.send_data(res in data)
+            socket.send_data(res in data, signkey=signkey)
 
 
 def slave(tasks, notifications, idx, verify_queue):
@@ -185,10 +188,11 @@ class Scraper:
     Represents a scraper, the worker node in the Scraper network.
     """
 
-    def __init__(self, address, port):
+    def __init__(self, address, port, signkey=None):
         self.addr = address
         self.port = port
         self.curTask = []
+        self.signkey = signkey
 
         log.info(f"Scrapper created", "init")
 
@@ -228,6 +232,7 @@ class Scraper:
                 False,
                 masters_queue,
                 log,
+                self.signkey,
             ),
         )
         p_get_masters.start()
@@ -242,11 +247,11 @@ class Scraper:
         Start to manage childs-slaves.
         """
         context = CloudPickleContext()
-        socket_pull = context.socket(zmq.PULL)
+        socket_pull: CloudPickleSocket = context.socket(zmq.PULL)
 
         masters_queue1 = Queue()
         masters_queue2 = Queue()
-        for address in self.seeds:
+        for address in self.masters:
             masters_queue1.put(address)
             masters_queue2.put(address)
 
@@ -293,6 +298,9 @@ class Scraper:
                 [to_disconnect_queue1, to_disconnect_queue2],
                 log,
             ),
+            kwargs={
+                "signkey": self.signkey,
+            },
         )
         process_find_masters.start()
 
@@ -300,14 +308,29 @@ class Scraper:
         process_notifier = Process(
             target=notifier,
             name="Process Notifier",
-            args=(notifications_queue, masters_queue2, to_disconnect_queue2),
+            args=(
+                notifications_queue,
+                masters_queue2,
+                to_disconnect_queue2,
+            ),
+            kwargs={
+                "signkey": self.signkey,
+            },
         )
         process_notifier.start()
 
         process_listen = Process(
             target=listener,
             name="Process Listen",
-            args=(self.addr, self.port, pending_queue, self.curTask),
+            args=(
+                self.addr,
+                self.port,
+                pending_queue,
+                self.curTask,
+            ),
+            kwargs={
+                "signkey": self.signkey,
+            },
         )
         process_listen.start()
 
@@ -335,7 +358,9 @@ class Scraper:
                         )
                         with counter_SocketPull:
                             with lock_SocketPull:
-                                url = socket_pull.recv_data()
+                                url = socket_pull.recv_data(
+                                    flags=zmq.NOBLOCK, signkey=self.signkey
+                                )
                         with lock_work:
                             if url not in self.curTask:
                                 task_queue.put(url)
@@ -349,3 +374,34 @@ class Scraper:
         process_notifier.terminate()
         process_find_masters.terminate()
         process_listen.terminate()
+
+
+def main(args):
+    log.setLevel(LOGLVLMAP[args.level])
+    s = Scraper(port=args.port, address=args.address)
+    if not s.login(args.seed):
+        log.info("You are not connected to a network", "main")
+    s.manage(args.workers)
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Worker of a distibuted scrapper")
+    parser.add_argument(
+        "-a", "--address", type=str, default="127.0.0.1", help="node address"
+    )
+    parser.add_argument("-p", "--port", type=int, default=5050, help="connection port")
+    parser.add_argument("-l", "--level", type=str, default="DEBUG", help="log level")
+    parser.add_argument(
+        "-s",
+        "--seed",
+        type=str,
+        default=None,
+        help="address of a existing seed node. Insert as ip_address:port_number",
+    )
+    parser.add_argument("-w", "--workers", type=int, default=2, help="number of slaves")
+
+    args = parser.parse_args()
+
+    main(args)
