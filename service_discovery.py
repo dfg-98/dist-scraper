@@ -1,5 +1,7 @@
 import pickle
+import queue
 import time
+from multiprocessing import Process, Queue
 from socket import (
     AF_INET,
     SO_BROADCAST,
@@ -21,6 +23,7 @@ BROADCAST_PORT = 4142
 from settings import get_config
 
 conf = get_config()
+localhost = "127.0.0.1"
 
 
 def discover_peer(times, log):
@@ -104,3 +107,96 @@ def get_masters(master, discover_peer, address, login, q, log, signkey=None):
         finally:
             if i == 1:
                 q.put({})
+
+
+def ping(master, q, time, log):
+    """
+    Process that make ping to a master.
+    """
+    context = zmq.Context()
+    socket: CloudPickleSocket = no_block_REQ(context, timeout=time)
+    socket.connect(f"tcp://{master[0]}:{master[1]}")
+    status = True
+
+    log.debug(f"PING to {master[0]}:{master[1]}", "Ping")
+    try:
+        socket.send_data((messages.PING,))
+
+        msg = socket.recv_data()
+        log.info(f"Received {msg} from {master[0]}:{master[1]} after ping", "Ping")
+    except zmq.error.Again as e:
+        log.debug(f"PING failed -- {e}", "Ping")
+        status = False
+    q.put(status)
+
+
+def find_masters(
+    masters,
+    peer_queues,
+    dead_queues,
+    log,
+    timeout=1000,
+    sleep_time=15,
+    master_from_input=None,
+):
+    """
+    Process that ask to a seed for his list of seeds.
+    """
+    time.sleep(sleep_time)
+    while True:
+        # random address
+        master = (localhost, 9999)
+        data = list(masters)
+        for s in data:
+            # This process is useful to know if a seed is dead too
+            ping_queue = Queue()
+            process_ping = Process(
+                target=ping, name="Ping", args=(s, ping_queue, timeout, log)
+            )
+            process_ping.start()
+            status = ping_queue.get()
+            process_ping.terminate()
+            if not status:
+                for q in dead_queues:
+                    q.put(s)
+                masters.remove(s)
+            else:
+                master = s
+        masters_queue = Queue()
+        process_get_masters = Process(
+            target=get_masters,
+            name="Get Masters",
+            args=(
+                f"{master[0]}:{master[1]}",
+                discover_peer,
+                None,
+                False,
+                masters_queue,
+                log,
+            ),
+        )
+        log.debug("Finding new masters to pull from...", "Find Masters")
+        process_get_masters.start()
+        tmp = set(masters_queue.get())
+        process_get_masters.terminate()
+        # If Get Masters succeds to connect to a master
+        if len(tmp) != 0:
+            dif = tmp - masters
+            if not len(dif):
+                log.debug("No new master nodes where finded", "Find Masters")
+            else:
+                log.debug("New master nodes where finded", "Find Masters")
+
+            for s in dif:
+                for q in peer_queues:
+                    q.put(s)
+            masters.update(tmp)
+
+            if master_from_input is not None:
+                try:
+                    masters.add(master_from_input.get(block=False))
+                except queue.Empty:
+                    pass
+
+        # The amount of the sleep in production can be changed
+        time.sleep(sleep_time)
