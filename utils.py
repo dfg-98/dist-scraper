@@ -80,3 +80,61 @@ class Configuration(dict, metaclass=Singleton):
 
     def __repr__(self):
         return "\n".join(("{}: {}".format(k, v) for k, v in self._defaults.items()))
+
+
+class ConsistencyUnit:
+    """
+    Consistency unit, keep a resource and some metrics.
+    """
+
+    def __init__(self, data, owners, limit=5):
+        self.data = data
+        self.hits = 0
+        self.lives = 0
+        self.limit = limit
+        self.owners = owners
+
+    def hit(self):
+        """
+        Add a hit for this resource, if limit is reached,
+        then its data can be replicated by the caller.
+        """
+        self.hits += 1
+
+        if self.hits == self.limit:
+            return True
+        return False
+
+    def try_own(self, repLimit):
+        """
+        Returns True if the resource is in the tolerable replication limit.
+        """
+        return len(self.owners) < repLimit
+
+    def add_owner(self, owner):
+        if owner not in self.owners:
+            self.owners.append(owner)
+
+    def remove_owner(self, owner):
+        if owner in self.owners:
+            self.owners.remove(owner)
+
+    def add_live(self):
+        self.lives += 1
+        self.hits = 0
+
+    def update_data(self, data, lives=0):
+        self.data = data
+        self.lives = lives
+
+    def copy(self):
+        """
+        Returns a copy without data.
+        """
+        conit = ConsistencyUnit(None, self.owners, self.limit)
+        conit.hits = self.hits
+        conit.lives = self.lives
+        return conit
+
+    def is_removable(self):
+        return (self.lives and self.hits < self.limit) or self.lives > 1
