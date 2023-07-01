@@ -1,16 +1,18 @@
+import json
 import os
 import re
 import time
 from multiprocessing import Process, Queue
 from threading import Lock, Semaphore, Thread
 from urllib.parse import urljoin
+from uuid import uuid4
 
 import zmq
 from bs4 import BeautifulSoup
 from scrapy.http import HtmlResponse
 
 import messages
-from logger import GREEN, RED, RESET, get_logger
+from logger import GREEN, LOGLVLMAP, RED, RESET, get_logger
 from service_discovery import discover_peer, find_masters, get_masters
 from sockets import CloudPickleContext, CloudPickleSocket, no_block_REQ
 from utils import change_html
@@ -355,3 +357,71 @@ class Dispatcher:
         queue.put(True)
         find_masters_process.terminate()
         input_process.terminate()
+
+
+def main(args):
+    log.setLevel(LOGLVLMAP[args.level])
+
+    urls = []
+    try:
+        assert os.path.exists(args.urls), "No URLs to request"
+        with open(args.urls, "r") as fd:
+            urls = json.load(fd)
+    except Exception as e:
+        log.error(e, "main")
+
+    log.info(urls, "main")
+    uuid = str(uuid4())
+    d = Dispatcher(urls, uuid, args.address, args.port, args.depth)
+    master = args.master
+
+    while not d.login(master):
+        log.info(
+            "Enter an address of an existing master node. Insert as ip_address:port_number. Press ENTER if you want to omit this address. Press q if you want to exit the program"
+        )
+        master = input("-->")
+        if master == "":
+            continue
+        master = master.split()[0]
+        if master == "q":
+            break
+
+    if master != "q":
+        terminate_queue = Queue()
+        dispatch_process = Process(target=d.dispatch, args=(terminate_queue,))
+        dispatch_process.start()
+        terminate_queue.get()
+        log.info(f"Dispatcher:{uuid} finish!!!", "main")
+        dispatch_process.terminate()
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Client of a distibuted scrapper")
+    parser.add_argument(
+        "-a", "--address", type=str, default="127.0.0.1", help="node address"
+    )
+    parser.add_argument("-p", "--port", type=int, default=4142, help="connection port")
+    parser.add_argument("-l", "--level", type=str, default="INFO", help="log level")
+    parser.add_argument(
+        "-d", "--depth", type=int, default=1, help="depth of recursive downloads"
+    )
+    parser.add_argument(
+        "-u",
+        "--urls",
+        type=str,
+        default="urls",
+        help="path of file that contains the urls set",
+    )
+    parser.add_argument(
+        "-m",
+        "--master",
+        type=str,
+        default=None,
+        help="address of an existing master node. Insert as ip_address:port_number",
+    )
+
+    args = parser.parse_args()
+
+    main(args)

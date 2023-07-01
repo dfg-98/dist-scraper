@@ -7,7 +7,7 @@ from threading import Lock, Thread
 import zmq
 
 import messages
-from logger import get_logger
+from logger import LOGLVLMAP, get_logger
 from service_discovery import broadcast_listener, discover_peer, get_masters
 from sockets import CloudPickleContext, CloudPickleSocket, no_block_REQ
 from utils import ConsistencyUnit, clock
@@ -841,3 +841,71 @@ class MasterNode:
                 # Handle connection error
                 log.error(e, "serve")
                 time.sleep(5)
+
+
+def main(args):
+    log.setLevel(LOGLVLMAP[args.level])
+    m = MasterNode(
+        args.address,
+        args.port,
+        args.replication_limit,
+        args.deletion_threshold,
+        args.signkey,
+    )
+    if not m.login(args.master):
+        log.info("You are not connected to a network", "main")
+    m.serve(args.broadcast_port)
+
+
+if __name__ == "__main__":
+    import argparse
+
+    from settings import get_config
+
+    conf = get_config()
+
+    parser = argparse.ArgumentParser(description="Master of a distibuted scraper")
+    parser.add_argument(
+        "-a", "--address", type=str, default="127.0.0.1", help="node address"
+    )
+    parser.add_argument("-p", "--port", type=int, default=8101, help="connection port")
+    parser.add_argument(
+        "-b",
+        "--broadcast_port",
+        type=int,
+        default=conf["BROADCAST_PORT"],
+        help="broadcast listener port (Default: 4142)",
+    )
+    parser.add_argument("-l", "--level", type=str, default="INFO", help="log level")
+    parser.add_argument(
+        "-m",
+        "--master",
+        type=str,
+        default=None,
+        help="address of a existing master node. Insert as ip_address:port_number",
+    )
+    parser.add_argument(
+        "-r",
+        "--replication_limit",
+        type=int,
+        default=2,
+        help="maximum number of times that you want data to be replicated",
+    )
+    parser.add_argument(
+        "-d",
+        "--deletion_threshold",
+        type=int,
+        default=5,
+        help="deletion threshold for data in cache",
+    )
+    parser.add_argument(
+        "-k",
+        "--signkey",
+        type=str,
+        default=conf["SIGNKEY"],
+        help="sign key for communication",
+    )
+
+    args = parser.parse_args()
+
+    main(args)

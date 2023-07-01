@@ -378,8 +378,8 @@ class Scraper:
 
 def main(args):
     log.setLevel(LOGLVLMAP[args.level])
-    s = Scraper(port=args.port, address=args.address)
-    if not s.login(args.seed):
+    s = Scraper(port=args.port, address=args.address, signkey=args.signkey)
+    if not s.login(args.master):
         log.info("You are not connected to a network", "main")
     s.manage(args.workers)
 
@@ -394,13 +394,20 @@ if __name__ == "__main__":
     parser.add_argument("-p", "--port", type=int, default=5050, help="connection port")
     parser.add_argument("-l", "--level", type=str, default="DEBUG", help="log level")
     parser.add_argument(
-        "-s",
-        "--seed",
+        "-m",
+        "--master",
         type=str,
         default=None,
-        help="address of a existing seed node. Insert as ip_address:port_number",
+        help="address of a existing master node. Insert as ip_address:port_number",
     )
     parser.add_argument("-w", "--workers", type=int, default=2, help="number of slaves")
+    parser.add_argument(
+        "-k",
+        "--signkey",
+        type=str,
+        default=conf["SIGNKEY"],
+        help="sign key for communication",
+    )
 
     args = parser.parse_args()
 

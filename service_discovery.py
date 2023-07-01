@@ -15,11 +15,8 @@ from socket import (
 import zmq
 
 import messages
-from sockets import CloudPickleContext, CloudPickleSocket, no_block_REQ
-
-BROADCAST_PORT = 4142
-
 from settings import get_config
+from sockets import CloudPickleContext, CloudPickleSocket, no_block_REQ
 
 conf = get_config()
 localhost = "127.0.0.1"
@@ -35,7 +32,7 @@ def discover_peer(times, log):
     sock.setsockopt(SOL_SOCKET, SO_BROADCAST, 1)
     sock.settimeout(2)
 
-    broadcastAddress = ("255.255.255.255", BROADCAST_PORT)
+    broadcastAddress = ("255.255.255.255", conf["BROADCAST_PORT"])
     magic = conf["magic"]
     message = magic + messages.LOGIN_MESSAGE
     peer = ""

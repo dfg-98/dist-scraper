@@ -11,6 +11,8 @@ class DistScrapperConfig(Configuration):
     defaults = {
         "magic": os.getenv("DIST_SCRAPPER_MAGIC", "nomagicondev"),
         "log_level": "INFO",
+        "BROADCAST_PORT": 4142,
+        "SIGNKEY": None,
     }
 
 
