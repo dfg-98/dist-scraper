@@ -77,6 +77,31 @@ def discover_peer(times, log):
     return peer, network
 
 
+def broadcast_listener(addr, port, log):
+    """
+    Process that reply broadcast messages from other peers.
+    It not works offline.
+    """
+    sock = socket(AF_INET, SOCK_DGRAM)
+    sock.bind(("", port))
+
+    while True:
+        # address = (ip, port)
+        data, address = sock.recvfrom(4096)
+        data = str(data.decode("UTF-8"))
+        log.debug(
+            f"Received {str(len(data))} bytes from {str(address)}", "Broadcast Listener"
+        )
+        log.debug(f"Data: {data}", "Broadcast Listener")
+
+        magic = conf["magic"]
+        login = magic + messages.LOGIN_MESSAGE
+        if data == login:
+            # addr = (addr, port)
+            welcome = magic + messages.WELCOME_MESSAGE
+            sock.sendto(welcome, address)
+
+
 def get_masters(master, discover_peer, address, login, q, log, signkey=None):
     """
     Request the list of master nodes to a active master, if <master> is not active, then try to discover a master active in the network.

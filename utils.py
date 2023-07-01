@@ -2,6 +2,7 @@
 """
 import inspect
 import json
+import time
 
 
 class Singleton(type):
@@ -138,3 +139,11 @@ class ConsistencyUnit:
 
     def is_removable(self):
         return (self.lives and self.hits < self.limit) or self.lives > 1
+
+
+def clock(cycle, q):
+    """
+    Process that notice to the <q> Queue owner when a cycle is passed.
+    """
+    time.sleep(cycle)
+    q.put(True)
