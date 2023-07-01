@@ -147,3 +147,15 @@ def clock(cycle, q):
     """
     time.sleep(cycle)
     q.put(True)
+
+
+def change_html(html, changes):
+    """
+    Function to replace a group of changes in a Html.
+    Changes have the form (old, new)
+    """
+    changes.sort(key=lambda x: len(x[0]), reverse=True)
+    for old, new in changes:
+        html = html.replace(f'"{old}"', f'"{new}"')
+        html = html.replace(f"'{old}'", f"'{new}'")
+    return html
