@@ -97,12 +97,18 @@ def writer(root, url, old, data, name, graph):
     """
 
     if url in old or url not in data:
+        # log.debug(f"URL {url} already written or not found", "Writer")
         return
     old.add(url)
 
     url_name = name[url]
-    with open(f"{root}/{url_name}", "wb") as fd:
-        fd.write(data[url])
+    try:
+        with open(f"{root}/{url_name}", "wb") as fd:
+            # log.debug(f"Write {url} with data {data[url]}", "Writer")
+            text_data = str(data[url]).encode()
+            fd.write(text_data)
+    except Exception as e:
+        log.error(f"Error while writing {url}: {e}", "Writer")
 
     for next_url in graph[url]:
         writer(root, next_url, old, data, name, graph)
@@ -290,7 +296,7 @@ class Dispatcher:
                     text = html.decode()
                     soup = BeautifulSoup(html, "html.parser")
                     new_urls = extract_links(url, soup)
-                    log.debug(new_urls)
+
                     for i, link in enumerate(new_urls):
                         graph[url].add(link)
                         if link not in url_mapper:
@@ -327,10 +333,10 @@ class Dispatcher:
             except:
                 base = f"web_page_{i}"
             try:
-                os.makedirs(f"Downloads/{base}-data")
-            except:
-                pass
-            # log.debug(f"Write url {url}")
+                os.makedirs(f"Downloads/{base}-data", exist_ok=True)
+            except Exception as e:
+                log.error(e, "dispatch")
+
             writer(f"Downloads/{base}-data", url, set(), data, url_mapper, graph)
 
             html = data[url]
@@ -342,6 +348,8 @@ class Dispatcher:
                     changes.append((name, f"{base}-data/{name}"))
                 html = change_html(text, changes).encode()
             with open(f"Downloads/{base}", "wb") as fd:
+                if not isinstance(html, bytes):
+                    html = str(html).encode()
                 fd.write(html)
 
         log.info(
@@ -351,6 +359,7 @@ class Dispatcher:
         # disconnect
 
         queue.put(True)
+
         find_masters_process.terminate()
         input_process.terminate()
 
