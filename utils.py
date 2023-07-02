@@ -3,6 +3,8 @@
 import inspect
 import json
 import time
+from typing import List
+from urllib.parse import urljoin
 
 
 class Singleton(type):
@@ -159,3 +161,13 @@ def change_html(html, changes):
         html = html.replace(f'"{old}"', f'"{new}"')
         html = html.replace(f"'{old}'", f"'{new}'")
     return html
+
+
+def extract_links(url, soup) -> List[str]:
+    return list(
+        {
+            urljoin(url, a.get("href"))
+            for a in soup.find_all("a")
+            if a.get("href") and not (a.get("rel") and "nofollow" in a.get("rel"))
+        }
+    )

@@ -15,7 +15,7 @@ import messages
 from logger import GREEN, LOGLVLMAP, RED, RESET, get_logger
 from service_discovery import discover_peer, find_masters, get_masters
 from sockets import CloudPickleContext, CloudPickleSocket, no_block_REQ
-from utils import change_html
+from utils import change_html, extract_links
 
 lock_socket_req = Lock()
 counter_socket_req = Semaphore(value=0)
@@ -289,22 +289,13 @@ class Dispatcher:
                 try:
                     text = html.decode()
                     soup = BeautifulSoup(html, "html.parser")
-                    tags = soup.find_all(
-                        lambda tag: tag.has_attr("href") or tag.has_attr("src")
-                    )
-                    new_urls = [["src", "href"][tag.has_attr("href")] for tag in tags]
-                    changes = []
-                    for i, attr in enumerate(new_urls):
-                        url_dir = urljoin(url, tags[i][attr])
-                        graph[url].add(url_dir)
-                        if url_dir not in url_mapper:
-                            url_mapper[url_dir] = f"url_{len(url_mapper)}"
-                        changes.append((tags[i][attr], url_mapper[url_dir]))
-                        if attr == "src" or tags[i].name == "link":
-                            src.add(url_dir)
-                            continue
-                        self.urls.append(url_dir)
-                    html = change_html(text, changes).encode()
+                    new_urls = extract_links(url, soup)
+                    log.debug(new_urls)
+                    for i, link in enumerate(new_urls):
+                        graph[url].add(link)
+                        if link not in url_mapper:
+                            url_mapper[link] = f"url_{len(url_mapper)}"
+                        self.urls.append(link)
                 except UnicodeDecodeError:
                     log.debug(f"{url} is not decodeable", "dispatch")
                 except:  # BeautifulSoup strange exceptions related with his's logger
