@@ -32,7 +32,6 @@ def get_remote_tasks(master, tasks_queue, signkey=None):
     for _ in range(2):
         try:
             sock.send_data((messages.GET_TASKS,), signkey=signkey)
-
             response = sock.recv_data(signkey=signkey)
             log.info(f"Tasks received", "Get Remote Tasks")
             assert isinstance(
@@ -410,6 +409,7 @@ def purger(tasks, address, cycle, to_pub_queue, purge_queue, old_requests):
     """
     Thread that purge the downloaded data from tasks map when a time cycle occurs.
     """
+
     while True:
         clock_process = Process(target=clock, args=(cycle, purge_queue))
         clock_process.start()
@@ -848,10 +848,21 @@ class MasterNode:
 
                 else:
                     sock.send_data(messages.UNKNOW, signkey=self.signkey)
+
+            except KeyboardInterrupt:
+                log.info("Stopping server", "serve")
+                break
             except Exception as e:
                 # Handle connection error
                 log.error(e, "serve")
                 time.sleep(5)
+
+        push_process.terminate()
+        worker_attender_process.terminate()
+        task_publisher_process.terminate()
+        task_subscriber_process.terminate()
+        verifier_process.terminate()
+        listener_process.terminate()
 
 
 def main(args):

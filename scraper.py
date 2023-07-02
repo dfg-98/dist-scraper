@@ -362,32 +362,40 @@ class Scraper:
 
         addr = (self.addr, self.port)
         time.sleep(1)
-        while True:
-            # task: (client_addr, url)
-            try:
-                with available_slaves:
-                    if available_slaves.value > 0:
-                        log.debug(
-                            f"Available Slaves: {available_slaves.value}", "manage"
-                        )
-                        with counter_SocketPull:
-                            with lock_SocketPull:
-                                url = socket_pull.recv_data(
-                                    flags=zmq.NOBLOCK, signkey=self.signkey
-                                )
-                        with lock_work:
-                            if url not in self.curTask:
-                                task_queue.put(url)
-                                notifications_queue.put((messages.PULLED, url, addr))
-                                pending_queue.put((True, url))
-                                log.debug(f"Pulled {url} in scrapper", "manage")
-            except zmq.error.ZMQError as e:
-                log.debug(f"No new messages to pull: {e}", "manage")
-            time.sleep(1)
+        try:
+            while True:
+                # task: (client_addr, url)
+                try:
+                    with available_slaves:
+                        if available_slaves.value > 0:
+                            log.debug(
+                                f"Available Slaves: {available_slaves.value}", "manage"
+                            )
+                            with counter_SocketPull:
+                                with lock_SocketPull:
+                                    url = socket_pull.recv_data(
+                                        flags=zmq.NOBLOCK, signkey=self.signkey
+                                    )
+                            with lock_work:
+                                if url not in self.curTask:
+                                    task_queue.put(url)
+                                    notifications_queue.put((messages.PULLED, url, addr))
+                                    pending_queue.put((True, url))
+                                    log.debug(f"Pulled {url} in scrapper", "manage")
+                except zmq.error.ZMQError as e:
+                    log.debug(f"No new messages to pull: {e}", "manage")
+                time.sleep(1)
+        except KeyboardInterrupt:
+            log.info("Scrapper is closing...", "manage")
 
         process_notifier.terminate()
         process_find_masters.terminate()
         process_listen.terminate()
+        lock_work.release()
+        lock_SocketPull.release()
+        lock_SocketNotifier.release()
+        counter_SocketPull.release()
+        counter_SocketNotifier.release()
 
 
 def main(args):
