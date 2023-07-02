@@ -30,7 +30,7 @@ counter_SocketNotifier = Semaphore(value=0)
 
 def connect_to_masters(sock, inc, lock, counter, peer_queue, user):
     """
-    Thread that connect <sock> socket to seeds.
+    Thread that connect <sock> socket to master.
     """
     for addr, port in iter(peer_queue.get, messages.STOP):
         with lock:
@@ -171,6 +171,20 @@ def slave(tasks, notifications, idx, verify_queue):
         for i in range(5):
             try:
                 response = requests.get(url)
+                response.raise_for_status()
+            except requests.HTTPError as e:
+                # HTTP Error handles bad responses
+                if i == 4:
+                    notifications.put((messages.DONE, url, e))
+                    verify_queue.put((False, url))
+                    break
+                continue
+            except requests.ConnectionError as e:
+                if i == 4:
+                    notifications.put((messages.DONE, url, e))
+                    verify_queue.put((False, url))
+                    break
+                continue
             except Exception as e:
                 log.error(e, f"slave {idx}")
                 if i == 4:
@@ -208,13 +222,13 @@ class Scraper:
                 assert regex.match(master).end() == len(master)
             except (AssertionError, AttributeError):
                 log.error(
-                    f"Parameter seed inserted is not a valid ip_address:port_number"
+                    f"Parameter master inserted is not a valid ip_address:port_number"
                 )
                 master = None
 
         if master is None:
             # //TODO: Change times param in production
-            log.debug("Discovering seed nodes", "login")
+            log.debug("Discovering master nodes", "login")
             master, network = discover_peer(3, log)
             if master == "":
                 self.masters = list()
@@ -255,7 +269,7 @@ class Scraper:
             masters_queue1.put(address)
             masters_queue2.put(address)
 
-        # Thread that connect pull socket to seeds
+        # Thread that connect pull socket to masters
         connection_thread = Thread(
             target=connect_to_masters,
             name="Connect to Masters - Pull",
@@ -274,10 +288,10 @@ class Scraper:
         to_disconnect_queue1 = Queue()
         to_disconnect_queue2 = Queue()
 
-        # Thread that disconnect pull socket from seeds
+        # Thread that disconnect pull socket from masters
         disconnect_thread = Thread(
             target=disconnect_from_masters,
-            name="Disconnect from Seeds - Pull",
+            name="Disconnect from Masters - Pull",
             args=(
                 socket_pull,
                 1,

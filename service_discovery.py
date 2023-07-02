@@ -46,10 +46,12 @@ def discover_peer(times, log):
             log.debug("Waiting to receive", "discover_peer")
             data, server = sock.recvfrom(4096)
             header, address = pickle.loads(data)
+            header = header.decode("UTF-8")
             if header.startswith(conf["magic"]):
+                # log.debug(f"Header received: {header}")
                 header = header.replace(conf["magic"], "")
 
-                if header == "WELCOME":
+                if header == messages.WELCOME_MESSAGE:
                     log.info(f"Received confirmation: {address}", "discover_peer")
                     log.info(f"Server: {str(server)}", "discover_peer")
                     peer = f"{server[0]}:{address[1]}"
@@ -96,7 +98,7 @@ def broadcast_listener(addr, port, log):
         if data == login:
             # addr = (addr, port)
             welcome = magic + messages.WELCOME_MESSAGE
-            sock.sendto(welcome, address)
+            sock.sendto(pickle.dumps((welcome.encode(), addr)), address)
 
 
 def get_masters(master, discover_peer, address, login, q, log, signkey=None):
@@ -106,20 +108,23 @@ def get_masters(master, discover_peer, address, login, q, log, signkey=None):
     context = CloudPickleContext()
     sock: CloudPickleSocket = no_block_REQ(context, timeout=1200)
     sock.connect(f"tcp://{master}")
-
+    log.debug(f"Connecting to {master}", "Get Masters")
     for i in range(4, 0, -1):
         try:
-            sock.send_data(messages.GET_MASTERS, signkey=signkey)
+            sock.send_data((messages.GET_MASTERS,), signkey=signkey)
+            log.debug(f"Sending {messages.GET_MASTERS}", "Get Masters")
             masters = sock.recv_data(signkey=signkey)
+            log.debug(f"Received {masters}", "Get Masters")
             log.info(f"Received masters: {masters}", "Get Masters")
             if login:
                 sock.send_data((messages.NEW_MASTER, address), signkey=signkey)
                 sock.recv_data(signkey=signkey)
             sock.close()
-            q.put(master)
+
+            q.put(masters)
             break
         except zmq.error.Again as e:
-            log.debug(e, "Get Master")
+            log.debug(f"zmq.error.Again {e}", "Get Master")
             master, _ = discover_peer(i, log)
             if master != "":
                 sock.connect(f"tcp://{master}")
@@ -134,7 +139,7 @@ def ping(master, q, time, log, signkey=None):
     """
     Process that make ping to a master.
     """
-    context = zmq.Context()
+    context = CloudPickleContext()
     socket: CloudPickleSocket = no_block_REQ(context, timeout=time)
     socket.connect(f"tcp://{master[0]}:{master[1]}")
     status = True
@@ -162,7 +167,7 @@ def find_masters(
     signkey=None,
 ):
     """
-    Process that ask to a seed for his list of seeds.
+    Process that ask to a master for his list of masters.
     """
     time.sleep(sleep_time)
     while True:
@@ -170,7 +175,7 @@ def find_masters(
         master = (localhost, 9999)
         data = list(masters)
         for s in data:
-            # This process is useful to know if a seed is dead too
+            # This process is useful to know if a master is dead too
             ping_queue = Queue()
             process_ping = Process(
                 target=ping,

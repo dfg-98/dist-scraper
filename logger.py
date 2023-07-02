@@ -5,11 +5,6 @@ Provides utility method to spawn a logger.
 import logging
 import os
 
-DEFAULT_LOGSIZE = int(os.getenv("LOGSIZE", "5242880"))
-DEFAULT_LOGPATH = os.getenv("LOGPATH", "/tmp/log/tasq")
-DEFAULT_FORMAT = os.getenv("LOGFMT", "%(asctime)s - %(name)s: %(message)s")
-DEFAULT_LOGLEVEL = os.getenv("LOGLVL", "INFO")
-
 datefmt = "%Y-%m-%d %H:%M:%S"
 
 LOGLVLMAP = {
@@ -35,6 +30,15 @@ YELLOWB = YELLOW + BOLD
 BLUEB = BLUE + BOLD
 MAGENTAB = MAGENTA + BOLD
 CYANB = CYAN + BOLD
+
+DEFAULT_LOGSIZE = int(os.getenv("LOGSIZE", "5242880"))
+DEFAULT_LOGPATH = os.getenv("LOGPATH", "/tmp/log/tasq")
+DEFAULT_FORMAT = os.getenv(
+    "LOGFMT",
+    f"{BLUE}%(asctime)s{RESET} - %(color)s%(levelname)s{RESET} - {BLACKB}%(name)s{RESET} - {GREEN}%(method)s{RESET} - %(message)s",
+)
+DEFAULT_LOGLEVEL = os.getenv("LOGLVL", "INFO")
+
 
 # Set default logging handler to avoid "No handler found" warnings.
 try:

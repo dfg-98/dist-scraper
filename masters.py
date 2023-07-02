@@ -22,7 +22,7 @@ lock_clients = Lock()
 
 def get_remote_tasks(master, tasks_queue, signkey=None):
     """
-    Process that ask to other seed for his tasks.
+    Process that ask to other master for his tasks.
     """
     context = CloudPickleContext()
     sock: CloudPickleSocket = no_block_REQ(context, timeout=1000)
@@ -60,7 +60,7 @@ def push_task(push_queue, addr, signkey=None):
 
     for url in iter(push_queue.get, messages.STOP):
         log.debug(f"Pushing {url}", "Task Pusher")
-        sock.send_data(url.encode(), signkey=signkey)
+        sock.send_data(url, signkey=signkey)
 
 
 def task_publisher(addr, task_queue, signkey=None):
@@ -142,13 +142,13 @@ def task_subscriber(
     """
     context = CloudPickleContext()
     sock: CloudPickleSocket = context.socket(zmq.SUB)
-    sock.setsockopt(zmq.SUBSCRIBE, messages.PULLED_TASK)
-    sock.setsockopt(zmq.SUBSCRIBE, messages.NEW_MASTER)
-    sock.setsockopt(zmq.SUBSCRIBE, messages.UPDATE)
-    sock.setsockopt(zmq.SUBSCRIBE, messages.NEW_DATA)
-    sock.setsockopt(zmq.SUBSCRIBE, messages.FORCED)
-    sock.setsockopt(zmq.SUBSCRIBE, messages.REMOVE)
-    sock.setsockopt(zmq.SUBSCRIBE, messages.REMOVE)
+    sock.setsockopt(zmq.SUBSCRIBE, messages.PULLED_TASK.encode())
+    sock.setsockopt(zmq.SUBSCRIBE, messages.NEW_MASTER.encode())
+    sock.setsockopt(zmq.SUBSCRIBE, messages.UPDATE.encode())
+    sock.setsockopt(zmq.SUBSCRIBE, messages.NEW_DATA.encode())
+    sock.setsockopt(zmq.SUBSCRIBE, messages.FORCED.encode())
+    sock.setsockopt(zmq.SUBSCRIBE, messages.REMOVE.encode())
+    sock.setsockopt(zmq.SUBSCRIBE, messages.REMOVE.encode())
 
     connect_thread = Thread(
         target=connect_to_publishers,
@@ -278,16 +278,23 @@ def task_manager(tasks, q, to_pub_queue, pub):
         flag, url, data = q.get()
         with lock_tasks:
             if url in tasks and tasks[url][0]:
+                # task already exists and is not finished
+                # we can't update it
+                log.debug(
+                    f"Task {url} already exists and is not finished", "Task Manager"
+                )
                 continue
             tasks[url] = (flag, data)
+            log.debug(f"Task {url} added", "Task Manager")
             # publish to other master
             if pub:
+                log.debug(f"Publishing task {url}...", "Task Manager")
                 to_pub_queue.put((flag, url, data))
 
 
 def masters_manager(masters, q):
     """
-    Thread that helps the seed main process to update the seeds list.
+    Thread that helps the master main process to update the masters list.
     """
     while True:
         cmd, address = q.get()
@@ -514,7 +521,7 @@ class MasterNode:
                 assert regex.match(master).end() == len(master)
             except (AssertionError, AttributeError):
                 log.error(
-                    f"Parameter seed inserted is not a valid ip_address:port_number"
+                    f"Parameter master inserted is not a valid ip_address:port_number"
                 )
                 master = None
 
@@ -543,7 +550,7 @@ class MasterNode:
         )
         process_get_masters.start()
         tmp = masters_queue.get()
-        # If Get Seeds fails to connect to a seed for some reason
+        # If Get Master fails to connect to a master for some reason
         if tmp is not None:
             self.masters.extend([s for s in tmp if s not in self.masters])
         process_get_masters.terminate()
@@ -711,10 +718,11 @@ class MasterNode:
 
         time.sleep(0.5)
 
-        log.info("Starting to serve...", "serve")
+        log.info(f"Starting server on {self.addr}:{self.port}", "serve")
         while True:
             try:
                 msg = sock.recv_data(signkey=self.signkey)
+                # log.debug(f"Received {msg}", "serve")
                 if msg[0] == messages.URL:
                     _, id, url = msg
                     with lock_tasks:
@@ -727,6 +735,7 @@ class MasterNode:
 
                         try:
                             res = self.tasks[url]
+
                             if not res[0]:
                                 if isinstance(res[1], tuple):
                                     verification_queue.put((res[1], url))
@@ -809,9 +818,11 @@ class MasterNode:
                     sock.send_data(messages.OK, signkey=self.signkey)
 
                 elif msg[0] == messages.GET_MASTERS:
-                    log.info(f"{messages.GET_MASTERS} received, sending seeds", "serve")
+                    log.info(
+                        f"{messages.GET_MASTERS} received, sending masters", "serve"
+                    )
                     with lock_masters:
-                        log.debug(f"Masters: {self.masters}", "serve")
+                        log.debug(f"Sending Masters: {self.masters}", "serve")
                         sock.send_data(self.masters, signkey=self.signkey)
 
                 elif msg[0] == messages.PING:

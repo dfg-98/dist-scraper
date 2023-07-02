@@ -20,7 +20,7 @@ from utils import change_html
 lock_socket_req = Lock()
 counter_socket_req = Semaphore(value=0)
 
-log = get_logger("Master")
+log = get_logger("Dispatcher")
 
 
 def connect_to_masters(sock, peer_queue):
@@ -95,6 +95,7 @@ def writer(root, url, old, data, name, graph):
     The <graph> dependency tree is traversed while
     there are dependencies that are not found in <old>
     """
+
     if url in old or url not in data:
         return
     old.add(url)
@@ -145,8 +146,9 @@ class Dispatcher:
 
         if master is None:
             # //TODO: Change times param in production
-            log.debug("Discovering seed nodes", "login")
+            log.debug("Discovering master nodes", "login")
             master, network = discover_peer(3, log)
+
             if master == "":
                 log.error(
                     "Login failed, get the address of a active master node or connect to the same network that the service",
@@ -169,7 +171,9 @@ class Dispatcher:
             kwargs={"signkey": self.signkey},
         )
         get_masters_process.start()
+        # log.debug("Get masters process started", "login")
         self.masters = masters_queue.get()
+        # log.debug(f"Login Masters: {self.masters}", "login")
         get_masters_process.terminate()
 
         if not len(self.masters):
@@ -213,7 +217,7 @@ class Dispatcher:
             target=find_masters,
             name="Find Masters",
             args=(
-                set(self.seeds),
+                set(self.masters),
                 [masters_queue1],
                 [disconection_queue],
                 log,
@@ -284,7 +288,7 @@ class Dispatcher:
                 graph[url] = set()
                 try:
                     text = html.decode()
-                    soup = BeautifulSoup(html, "html.pazrser")
+                    soup = BeautifulSoup(html, "html.parser")
                     tags = soup.find_all(
                         lambda tag: tag.has_attr("href") or tag.has_attr("src")
                     )
@@ -335,7 +339,8 @@ class Dispatcher:
                 os.makedirs(f"Downloads/{base}-data")
             except:
                 pass
-            writer(f"downloads/{base}-data", url, set(), data, url_mapper, graph)
+            # log.debug(f"Write url {url}")
+            writer(f"Downloads/{base}-data", url, set(), data, url_mapper, graph)
 
             html = data[url]
             if len(graph[url]) > 0:
