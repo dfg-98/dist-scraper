@@ -81,24 +81,35 @@ def broadcast_listener(addr, port, log):
     Process that reply broadcast messages from other peers.
     It not works offline.
     """
-    sock = socket(AF_INET, SOCK_DGRAM)
-    sock.bind(("", port))
+    try:
+        sock = socket(AF_INET, SOCK_DGRAM)
+        sock.bind(("", port))
 
-    while True:
-        # address = (ip, port)
-        data, address = sock.recvfrom(4096)
-        data = str(data.decode("UTF-8"))
+        while True:
+            # address = (ip, port)
+            data, address = sock.recvfrom(4096)
+            data = str(data.decode("UTF-8"))
+            log.debug(
+                f"Received {str(len(data))} bytes from {str(address)}",
+                "Broadcast Listener",
+            )
+            log.debug(f"Data: {data}", "Broadcast Listener")
+
+            magic = conf["magic"]
+            login = magic + messages.LOGIN_MESSAGE
+            if data == login:
+                # addr = (addr, port)
+                welcome = magic + messages.WELCOME_MESSAGE
+                sock.sendto(pickle.dumps((welcome.encode(), addr)), address)
+    except OSError:
+        # Probably Broadcast port is in use
         log.debug(
-            f"Received {str(len(data))} bytes from {str(address)}", "Broadcast Listener"
+            f"Seems {port} is in use, retying in 60 seconds", "Broadcast Listener"
         )
-        log.debug(f"Data: {data}", "Broadcast Listener")
-
-        magic = conf["magic"]
-        login = magic + messages.LOGIN_MESSAGE
-        if data == login:
-            # addr = (addr, port)
-            welcome = magic + messages.WELCOME_MESSAGE
-            sock.sendto(pickle.dumps((welcome.encode(), addr)), address)
+        time.sleep(60)
+        broadcast_listener(addr, port, log)
+    except KeyboardInterrupt:
+        log.debug("Closing Broadcast Listener", "Broadcast Listener")
 
 
 def get_masters(master, discover_peer, address, login, q, log, signkey=None):
