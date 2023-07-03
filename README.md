@@ -5,7 +5,7 @@
 Implementación de un crawler de páginas web como un sistema distribuido que permite a los usuarios crawlear dado un conjunto de `urls` semillas y una profundidad de crawleo. Diseñado para ser escalable y tolerante a fallos. El sistema está basado en un modelo Master-Slave fundamentalmente, el cual es un modelo donde hay nodos del sistema que desempeñan el papel de *master* y controlan la toma de decisiones; y otros nodos actúan como *slaves* o *workers* y realizan las tareas que les son asignadas por el *master*. En este caso, además de los tipos de nodos mencionados, se agregó los nodos *dispatcher* los cuales actúan como clientes y son los que conocen las páginas que se desean crawlear. 
 
 <p align='center'>
-  <img width='460' heigth='300' src='https://github.com/dfg-98/dist-scraper/blob/main/assets/master-slave.png'>
+  <img width='460' heigth='300' src='https://github.com/dfg-98/dist-scraper/blob/master/assets/pub-sub.png?raw=true' >
   <br>
   Modelo Master-Slave
 </p>
@@ -28,7 +28,7 @@ Los nodos juegan roles especializados (clustering roles) como se mencionó se im
 Comunicación Publish-subscribe para el paso de mensajes en el sistema: Los nodos subscriber (workers) se suscriben a los nodos publishers (dispatchers) para recibir tareas de crawling. (Los workers tambien se subscriben a los masters????)
 
 <p align='center'>
-  <img width='460' heigth='300' src='https://github.com/dfg-98/dist-scraper/assets/blob/main/pub-sub.png'>
+  <img width='460' heigth='300' src='https://github.com/dfg-98/dist-scraper/blob/master/assets/master-slave.png?raw=true'>
   <br>
   Modelo Publish-subscribe
 </p>
