@@ -5,9 +5,9 @@
 Implementación de un scraper de páginas web como un sistema distribuido que permite a los usuarios crawlear dado un conjunto de `urls` semillas y una profundidad de crawleo. Diseñado para ser escalable y tolerante a fallos. El sistema está basado en un modelo Master-Slave fundamentalmente, el cual es un modelo donde hay nodos del sistema que desempeñan el papel de *master* y controlan la toma de decisiones; y otros nodos actúan como *slaves* o *workers* los cuales serán llamados nodos *scrapers* y realizan las tareas que les son asignadas por el *master*. En este caso, además de los tipos de nodos mencionados, se agregó los nodos *dispatcher* los cuales actúan como clientes y son los que conocen las páginas que se desean crawlear. 
 
 <p align='center'>
-  <img width='460' heigth='300' src='https://github.com/dfg-98/dist-scraper/blob/master/assets/master-slave.png?raw=true' >
+  <img width='460' heigth='300' src='https://github.com/dfg-98/dist-scraper/blob/master/assets/Tipos de nodos.png?raw=true' >
   <br>
-  Modelo Master-Slave
+ 
 </p>
 
 ## Instalación
@@ -74,9 +74,9 @@ de crawling y los datos en el sistema, garantizando la tolearancia a fallos.
 
 
 <p align='center'>
-  <img width='460' heigth='300' src='https://github.com/dfg-98/dist-scraper/blob/master/assets/pub-sub.png?raw=true'>
+  <img width='460' heigth='300' src='https://github.com/dfg-98/dist-scraper/blob/master/assets/comunicacion.png?raw=true'>
   <br>
-  Modelo Publish-subscribe
+
 </p>
 
 
@@ -121,6 +121,13 @@ Los nodos master se mantiene actualizados entre sí y pueden detectar fallos de 
 10. Este proceso continúa hasta que todas las URLs solicitadas hayan sido crawleadas.
 
 11. El dispatcher escribe en disco el arbol de url con sus contenidos.
+
+<p align='center'>
+  <img width='460' heigth='300' src='https://github.com/dfg-98/dist-scraper/blob/master/assets/3Flujo.png?raw=true' >
+  <br>
+ 
+</p>
+
 
 ## Evaluación del sistema distribuido
 
