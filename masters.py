@@ -156,9 +156,6 @@ def task_subscriber(
     )
     connect_thread.start()
 
-    # disconnect_thread = Thread(target=disconnect_from_publishers, name="Disconnect from Publishers", args=(sock, disconnect_queue))
-    # disconnect_thread.start()
-
     time.sleep(1)
 
     while True:
@@ -180,7 +177,7 @@ def task_subscriber(
                     # task: (address, port)
                     addr, port = task
                     master_queue.put((messages.REMOVE, (addr, port)))
-                    # disconnectQ.put((addr, port))
+                    disconnect_queue.put((addr, port))
                 elif header == "PURGE":
                     purge_queue.put(False)
                 else:
@@ -490,6 +487,55 @@ def clone_tasks(tasks: dict):
     return tasks_copy
 
 
+def replication_manager(
+    tasks,
+    address,
+    remove_queue,
+    new_masters_queue,
+    result_queue,
+    replication_limit,
+    signkey=None,
+):
+    """Thread for replicate data"""
+    while True:
+        log.debug("Replication Cycle Start", "Replication Manager")
+        for url in tasks:
+            task = tasks[url]
+            if task[0] and task[1].data == None:
+                log.debug(f"Don't have local replica of {url}", "Replication Manager")
+                # i don't have a local replica, ask owners
+                get_data_queue = Queue()
+                get_data_process = Process(
+                    target=get_data,
+                    name="Get Data",
+                    args=(
+                        url,
+                        address,
+                        task[1].owners,
+                        get_data_queue,
+                        remove_queue,
+                        new_masters_queue,
+                    ),
+                    kwargs={"signkey": signkey},
+                )
+                get_data_process.start()
+                data = get_data_queue.get()
+                get_data_process.terminate()
+                if data:
+                    # data: (data, lives)
+                    log.debug(
+                        f"Hit on {url}. Total hits: {task[1].hits + 1}",
+                        "serve",
+                    )
+
+                    if task[1].hit() and task[1].try_own(replication_limit):
+                        # replicate
+                        log.debug(f"Replicating data of {url}", "Replication Manager")
+                        result_queue.put((False, url, data))
+
+        time.sleep(conf["REPLICATION_DELAY"])
+
+
 class MasterNode:
     """
     Represents a master node, the node that receive and attend all client request.
@@ -567,6 +613,7 @@ class MasterNode:
         process_get_remote_tasks.terminate()
         self.tasks = {} if tasks is None else tasks
         log.info("Login finished", "login")
+        log.debug(f"Tasks fetched from remotes: {self.tasks}", "login")
         return network
 
     def serve(self, broadcastPort):
@@ -694,11 +741,25 @@ class MasterNode:
             args=(
                 self.tasks,
                 (self.addr, self.port),
-                600,  # 10 minutes
+                600,  # 20s
                 task_to_pub_queue,
                 purge_queue,
                 self.request,
             ),
+        )
+
+        replication_thread = Thread(
+            target=replication_manager,
+            name="Replication Manager",
+            args=(
+                self.tasks,
+                (self.addr, self.port),
+                remove_queue,
+                new_masters_queue,
+                result_queue,
+                self.replication_limit,
+            ),
+            kwargs={"signkey": self.signkey},
         )
 
         push_process.start()
@@ -715,6 +776,7 @@ class MasterNode:
         consistency_unit_creator_thread.start()
         remove_owner_thread.start()
         purger_thread.start()
+        replication_thread.start()
 
         time.sleep(0.5)
 
@@ -735,6 +797,7 @@ class MasterNode:
 
                         try:
                             res = self.tasks[url]
+                            log.debug(f"Res in self.tasks: {res}", "serve")
 
                             if not res[0]:
                                 if isinstance(res[1], tuple):
@@ -910,7 +973,7 @@ if __name__ == "__main__":
         "-r",
         "--replication_limit",
         type=int,
-        default=2,
+        default=3,
         help="maximum number of times that you want data to be replicated",
     )
     parser.add_argument(
