@@ -810,7 +810,7 @@ class MasterNode:
                 set(self.masters) - set({(self.addr, self.port)}),
                 new_masters_queue,
             ),
-            kwargs={"signkey": self.signkey, "sleep_time": 5},
+            kwargs={"signkey": self.signkey, "sleep_time": 30},
         )
 
         push_process.start()
