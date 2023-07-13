@@ -974,6 +974,7 @@ class MasterNode:
                 log.error(e, "serve")
                 time.sleep(5)
 
+        sock.close()
         push_process.terminate()
         worker_attender_process.terminate()
         task_publisher_process.terminate()
