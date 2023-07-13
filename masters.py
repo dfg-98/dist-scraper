@@ -272,13 +272,14 @@ def verificator(queue, t, push_queue, signkey=None):
             push_queue.put(url)
 
 
-def masters_verificator(masters, masters_queue, sleep_time, timeout=10, signkey=None):
+def masters_verificator(masters, masters_queue, sleep_time, timeout=100, signkey=None):
     """
     Process that pings masters to see if they are alive
     """
 
     while True:
         data = list(masters)
+        log.debug(f"Masters to ping: {masters=}")
         for m in data:
             # This process is useful to know if a master is dead too
             ping_queue = Queue()
@@ -806,7 +807,7 @@ class MasterNode:
             target=masters_verificator,
             name="Find Masters",
             args=(
-                set(self.masters) - set((self.addr, self.port)),
+                set(self.masters) - set({(self.addr, self.port)}),
                 new_masters_queue,
             ),
             kwargs={"signkey": self.signkey, "sleep_time": 5},
