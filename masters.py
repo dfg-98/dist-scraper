@@ -570,7 +570,7 @@ def replication_manager(
                         "serve",
                     )
 
-                    if task[1].hit() and task[1].try_own(replication_limit):
+                    if task[1].try_own(replication_limit):
                         # replicate
                         log.debug(f"Replicating data of {url}", "Replication Manager")
                         result_queue.put((False, url, data))
