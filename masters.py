@@ -8,7 +8,12 @@ import zmq
 
 import messages
 from logger import LOGLVLMAP, get_logger
-from service_discovery import broadcast_listener, discover_peer, get_masters
+from service_discovery import (
+    broadcast_listener,
+    discover_peer,
+    get_masters,
+    ping,
+)
 from sockets import CloudPickleContext, CloudPickleSocket, no_block_REQ
 from utils import ConsistencyUnit, clock
 
@@ -252,6 +257,7 @@ def verificator(queue, t, push_queue, signkey=None):
     """
     Process that manage the list of workers who should be verified.
     """
+
     for address, url in iter(queue.get, messages.STOP):
         ans_queue = Queue()
         quick_process = Process(
@@ -264,6 +270,37 @@ def verificator(queue, t, push_queue, signkey=None):
         quick_process.terminate()
         if not ans:
             push_queue.put(url)
+
+
+def masters_verificator(masters, masters_queue, sleep_time, timeout=10, signkey=None):
+    """
+    Process that pings masters to see if they are alive
+    """
+
+    while True:
+        data = list(masters)
+        for m in data:
+            # This process is useful to know if a master is dead too
+            ping_queue = Queue()
+            process_ping = Process(
+                target=ping,
+                name="Ping",
+                args=(m, ping_queue, timeout, log),
+                kwargs={
+                    "signkey": signkey,
+                },
+            )
+            process_ping.start()
+            status = ping_queue.get()
+            process_ping.terminate()
+            if not status:
+                log.debug(f"Put REMOVE master {m}")
+                masters_queue.put((messages.REMOVE, m))
+            else:
+                log.debug(f"Put APPEND master {m}")
+                masters_queue.put((messages.APPEND, m))
+
+        time.sleep(sleep_time)
 
 
 def task_manager(tasks, q, to_pub_queue, pub):
@@ -288,7 +325,7 @@ def task_manager(tasks, q, to_pub_queue, pub):
                 to_pub_queue.put((flag, url, data))
 
 
-def masters_manager(masters, q):
+def masters_manager(masters, q, self_address):
     """
     Thread that helps the master main process to update the masters list.
     """
@@ -298,7 +335,11 @@ def masters_manager(masters, q):
             if cmd == messages.APPEND and address not in masters:
                 masters.append(address)
                 log.info(f"Appended master", "Masters Manager")
-            elif cmd == messages.REMOVE and address in masters:
+            elif (
+                cmd == messages.REMOVE
+                and address in masters
+                and address != self_address
+            ):
                 masters.remove(address)
                 log.info(f"Removed master", "Masters Manager")
 
@@ -709,7 +750,7 @@ class MasterNode:
         master_manager_thread = Thread(
             target=masters_manager,
             name="Masters Manager",
-            args=(self.masters, new_masters_queue),
+            args=(self.masters, new_masters_queue, (self.addr, self.port)),
         )
         resource_manager_thread = Thread(
             target=resource_manager,
@@ -761,6 +802,15 @@ class MasterNode:
             ),
             kwargs={"signkey": self.signkey},
         )
+        process_masters_verification = Process(
+            target=masters_verificator,
+            name="Find Masters",
+            args=(
+                set(self.masters) - set((self.addr, self.port)),
+                new_masters_queue,
+            ),
+            kwargs={"signkey": self.signkey, "sleep_time": 5},
+        )
 
         push_process.start()
         worker_attender_process.start()
@@ -768,6 +818,7 @@ class MasterNode:
         task_subscriber_process.start()
         verifier_process.start()
         listener_process.start()
+        process_masters_verification.start()
 
         task_manager1_thread.start()
         task_manager2_thread.start()
@@ -886,7 +937,9 @@ class MasterNode:
                     )
                     with lock_masters:
                         log.debug(f"Sending Masters: {self.masters}", "serve")
-                        sock.send_data(self.masters, signkey=self.signkey)
+                        masters_to_send = list(self.masters)
+                        random.shuffle(masters_to_send)
+                        sock.send_data(masters_to_send, signkey=self.signkey)
 
                 elif msg[0] == messages.PING:
                     log.info(f"{messages.PING} received", "serve")
@@ -926,6 +979,7 @@ class MasterNode:
         task_subscriber_process.terminate()
         verifier_process.terminate()
         listener_process.terminate()
+        process_masters_verification.terminate()
 
 
 def main(args):

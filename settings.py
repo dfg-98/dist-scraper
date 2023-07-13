@@ -13,7 +13,7 @@ class DistScrapperConfig(Configuration):
         "log_level": "INFO",
         "BROADCAST_PORT": 4142,
         "SIGNKEY": None,
-        "REPLICATION_DELAY": 60,
+        "REPLICATION_DELAY": 10,
     }
 
 
